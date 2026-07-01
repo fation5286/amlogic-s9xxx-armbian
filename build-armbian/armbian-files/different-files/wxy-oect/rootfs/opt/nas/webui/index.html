@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WXY-OECT NAS</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>WXY-OECT NAS</h1>
+    <span id="clock"></span>
+  </header>
+  <main>
+    <section class="card">
+      <h2>系统状态</h2>
+      <div class="grid">
+        <div class="stat"><span class="label">运行时间</span><span class="val" id="uptime">--</span></div>
+        <div class="stat"><span class="label">CPU 负载</span><span class="val" id="cpu">--</span></div>
+        <div class="stat"><span class="label">内存</span><span class="val" id="memory">--</span></div>
+        <div class="stat"><span class="label">网络</span><span class="val" id="network">--</span></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>存储 <button onclick="mountDisks()" class="btn-sm">挂载</button></h2>
+      <table id="storage-table">
+        <thead><tr><th>挂载点</th><th>大小</th><th>已用</th><th>可用</th><th>使用率</th></tr></thead>
+        <tbody id="storage-body"></tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2>服务管理</h2>
+      <div id="services-list"></div>
+    </section>
+    <section class="card">
+      <h2>磁盘</h2>
+      <div id="disks-list"></div>
+    </section>
+  </main>
+  <footer>
+    <button onclick="restartNAS()" class="btn-danger">重启系统</button>
+  </footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
