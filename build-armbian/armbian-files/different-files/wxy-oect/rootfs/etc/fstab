@@ -1,0 +1,12 @@
+# /etc/fstab: static file system information.
+# <file system> <mount point>   <type>  <options>       <dump>  <pass>
+# WXY-OECT NAS 专用 fstab
+
+# 根分区 (eMMC)
+/dev/mmcblk0p1  /       ext4    defaults,noatime,nodiratime  0  1
+
+# 自动挂载 SATA 硬盘 (NAS 数据盘)
+/dev/sda1       /mnt/data     ext4    defaults,noatime,nodiratime,discard  0  2
+
+# 自动挂载 USB 外接存储（如果有）
+/dev/sdb1       /mnt/usb1     ext4    defaults,noatime,nodiratime  0  2

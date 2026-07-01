@@ -1,0 +1,121 @@
+name: Build NAS Image for WXY-OECT
+
+on:
+  workflow_dispatch:
+    inputs:
+      os_version:
+        description: '操作系统版本'
+        required: true
+        default: 'bookworm'
+        type: choice
+        options:
+          - bookworm
+          - jammy
+          - noble
+      kernel_version:
+        description: '内核版本'
+        required: true
+        default: '6.1.y'
+        type: choice
+        options:
+          - 6.1.y
+          - 6.6.y
+          - stable/6.12.y
+      target_device:
+        description: '目标设备'
+        required: true
+        default: 'wxy-oect'
+        type: choice
+        options:
+          - wxy-oect
+          - wxy-oect-mod
+      image_type:
+        description: '镜像类型'
+        required: true
+        default: 'server'
+        type: choice
+        options:
+          - server
+          - desktop
+      debian_base:
+        description: 'Debian 基础镜像（精简模式）'
+        required: false
+        default: 'true'
+        type: boolean
+        description: '启用后将只安装最小化包，不包含桌面环境和多余服务'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'fation5286'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support crossbuild-essential-arm64
+          
+      - name: Build NAS image for wxy-oect
+        run: |
+          # 设置构建参数
+          export TARGET_DEVICE="${{ github.event.inputs.target_device }}"
+          export OS_VERSION="${{ github.event.inputs.os_version }}"
+          export KERNEL_VERSION="${{ github.event.inputs.kernel_version }}"
+          export IMAGE_TYPE="${{ github.event.inputs.image_type }}"
+          
+          # 如果是精简模式，设置最小化构建标志
+          if [ "${{ github.event.inputs.debian_base }}" = "true" ]; then
+            export MINIMAL_BUILD="true"
+            echo "启用精简构建模式，将最小化 systemd 服务和安装包"
+          fi
+          
+          # 执行构建
+          bash ./rebuild \
+            --device "${TARGET_DEVICE}" \
+            --os "${OS_VERSION}" \
+            --kernel "${KERNEL_VERSION}" \
+            --image-type "${IMAGE_TYPE}"
+          
+          echo "构建完成！"
+
+      - name: Upload NAS image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nas-image-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}
+          path: output/*.img*
+          retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: WXY-OECT NAS Image ${{ github.event.inputs.os_version }} ${{ github.event.inputs.kernel_version }}
+          tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
+          files: output/*.img*
+          body: |
+            ## WXY-OECT NAS 专用镜像
+            
+            - **设备**: ${{ github.event.inputs.target_device }}
+            - **系统**: ${{ github.event.inputs.os_version }}
+            - **内核**: ${{ github.event.inputs.kernel_version }}
+            - **类型**: ${{ github.event.inputs.image_type }}
+            
+            ### 内置服务
+            - SSH (openssh-server)
+            - Samba (文件共享)
+            - Docker (容器运行时)
+            
+            ### 精简内容
+            - 禁用了 ModemManager, bluetooth, cups, thermald 等服务
+            - 移除了桌面环境和多余工具
+            - 预计开机内存占用: < 150MB
+            
+            ### 使用方法
+            1. 下载并解压 .img 文件
+            2. 使用 RKDevTool 刷入 eMMC 或 TF 卡
+            3. 首次启动后运行: `bash /opt/nas/install-nas.sh`

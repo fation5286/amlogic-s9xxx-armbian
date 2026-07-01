@@ -1,0 +1,19 @@
+# WXY-OECT NAS 专用 preset：禁用所有默认开启的非必要服务
+# 此文件在镜像编译时就存在，确保新系统不会启动这些服务
+disable ModemManager
+disable accounts-daemon
+disable bluetooth
+disable cups
+disable thermald
+disable systemd-logind
+disable unattended-upgrades
+disable apt-daily
+disable apt-daily-upgrade
+disable serial-getty@ttyS0
+disable snapd
+disable avahi-daemon
+disable NetworkManager-wait-online
+disable NetworkManager-dispatcher
+disable keyboard-setup
+disable systemd-resolved
+disable systemd-timesyncd
