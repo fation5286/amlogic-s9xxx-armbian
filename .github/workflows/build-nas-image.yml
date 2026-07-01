@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       os_version:
-        description: '操作系统版本'
+        description: '鎿嶄綔绯荤粺鐗堟湰'
         required: true
         default: 'bookworm'
         type: choice
@@ -13,7 +13,7 @@ on:
           - jammy
           - noble
       kernel_version:
-        description: '内核版本'
+        description: '鍐呮牳鐗堟湰'
         required: true
         default: '6.1.y'
         type: choice
@@ -22,7 +22,7 @@ on:
           - 6.6.y
           - stable/6.12.y
       target_device:
-        description: '目标设备'
+        description: '鐩爣璁惧'
         required: true
         default: 'wxy-oect'
         type: choice
@@ -30,7 +30,7 @@ on:
           - wxy-oect
           - wxy-oect-mod
       image_type:
-        description: '镜像类型'
+        description: '闀滃儚绫诲瀷'
         required: true
         default: 'server'
         type: choice
@@ -38,11 +38,10 @@ on:
           - server
           - desktop
       debian_base:
-        description: 'Debian 基础镜像（精简模式）'
+        description: '鍚敤鍚庡皢鍙畨瑁呮渶灏忓寲鍖咃紝涓嶅寘鍚闈㈢幆澧冨拰澶氫綑鏈嶅姟'
         required: false
-        default: 'true'
+        default: true
         type: boolean
-        description: '启用后将只安装最小化包，不包含桌面环境和多余服务'
 
 permissions:
   contents: write
@@ -63,26 +62,26 @@ jobs:
           
       - name: Build NAS image for wxy-oect
         run: |
-          # 设置构建参数
+          # 璁剧疆鏋勫缓鍙傛暟
           export TARGET_DEVICE="${{ github.event.inputs.target_device }}"
           export OS_VERSION="${{ github.event.inputs.os_version }}"
           export KERNEL_VERSION="${{ github.event.inputs.kernel_version }}"
           export IMAGE_TYPE="${{ github.event.inputs.image_type }}"
           
-          # 如果是精简模式，设置最小化构建标志
+          # 濡傛灉鏄簿绠€妯″紡锛岃缃渶灏忓寲鏋勫缓鏍囧織
           if [ "${{ github.event.inputs.debian_base }}" = "true" ]; then
             export MINIMAL_BUILD="true"
-            echo "启用精简构建模式，将最小化 systemd 服务和安装包"
+            echo "鍚敤绮剧畝鏋勫缓妯″紡锛屽皢鏈€灏忓寲 systemd 鏈嶅姟鍜屽畨瑁呭寘"
           fi
           
-          # 执行构建
+          # 鎵ц鏋勫缓
           bash ./rebuild \
             --device "${TARGET_DEVICE}" \
             --os "${OS_VERSION}" \
             --kernel "${KERNEL_VERSION}" \
             --image-type "${IMAGE_TYPE}"
           
-          echo "构建完成！"
+          echo "鏋勫缓瀹屾垚锛?
 
       - name: Upload NAS image artifact
         uses: actions/upload-artifact@v4
@@ -98,24 +97,22 @@ jobs:
           tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
           files: output/*.img*
           body: |
-            ## WXY-OECT NAS 专用镜像
+            ## WXY-OECT NAS 涓撶敤闀滃儚
             
-            - **设备**: ${{ github.event.inputs.target_device }}
-            - **系统**: ${{ github.event.inputs.os_version }}
-            - **内核**: ${{ github.event.inputs.kernel_version }}
-            - **类型**: ${{ github.event.inputs.image_type }}
+            - **璁惧**: ${{ github.event.inputs.target_device }}
+            - **绯荤粺**: ${{ github.event.inputs.os_version }}
+            - **鍐呮牳**: ${{ github.event.inputs.kernel_version }}
+            - **绫诲瀷**: ${{ github.event.inputs.image_type }}
             
-            ### 内置服务
+            ### 鍐呯疆鏈嶅姟
             - SSH (openssh-server)
-            - Samba (文件共享)
-            - Docker (容器运行时)
+            - Samba (鏂囦欢鍏变韩)
+            - Docker (瀹瑰櫒杩愯鏃?
             
-            ### 精简内容
-            - 禁用了 ModemManager, bluetooth, cups, thermald 等服务
-            - 移除了桌面环境和多余工具
-            - 预计开机内存占用: < 150MB
+            ### 绮剧畝鍐呭
+            - 绂佺敤浜?ModemManager, bluetooth, cups, thermald 绛夋湇鍔?            - 绉婚櫎浜嗘闈㈢幆澧冨拰澶氫綑宸ュ叿
+            - 棰勮寮€鏈哄唴瀛樺崰鐢? < 150MB
             
-            ### 使用方法
-            1. 下载并解压 .img 文件
-            2. 使用 RKDevTool 刷入 eMMC 或 TF 卡
-            3. 首次启动后运行: `bash /opt/nas/install-nas.sh`
+            ### 浣跨敤鏂规硶
+            1. 涓嬭浇骞惰В鍘?.img 鏂囦欢
+            2. 浣跨敤 RKDevTool 鍒峰叆 eMMC 鎴?TF 鍗?            3. 棣栨鍚姩鍚庤繍琛? `bash /opt/nas/install-nas.sh`
