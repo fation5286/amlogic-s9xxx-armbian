@@ -6,12 +6,12 @@ on:
       os_version:
         description: '操作系统版本'
         required: true
-        default: 'bookworm'
+        default: 'resolute'
         type: choice
         options:
+          - resolute
           - bookworm
           - jammy
-          - noble
       kernel_version:
         description: '内核版本'
         required: true
@@ -47,16 +47,11 @@ jobs:
     if: github.repository_owner == 'fation5286'
 
     steps:
-      - name: Initialize build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support crossbuild-essential-arm64
-
       - name: Build NAS image for wxy-oect
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: armbian
-          armbian_path: https://dl.armbian.com/*/Armbian_*-${{ github.event.inputs.os_version }}_*-arm64-*
+          armbian_path: https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_resolute_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_resolute_6.1.141_server_2026.07.01.img.gz
           armbian_board: ${{ github.event.inputs.target_device }}
           armbian_kernel: ${{ github.event.inputs.kernel_version }}
           auto_kernel: true
