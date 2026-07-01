@@ -1,0 +1,15 @@
+[Unit]
+Description=WXY-OECT NAS Web UI Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/nas/webui/nas-webui
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
