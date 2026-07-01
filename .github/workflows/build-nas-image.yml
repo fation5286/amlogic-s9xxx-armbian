@@ -47,7 +47,12 @@ jobs:
     if: github.repository_owner == 'fation5286'
 
     steps:
-      - name: Build NAS image for wxy-oect
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build base Armbian image
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: armbian
@@ -58,6 +63,63 @@ jobs:
           armbian_fstype: ext4
           armbian_size: 512/3000
           builder_name: "WXY-OECT-NAS"
+
+      - name: Inject NAS customization files
+        run: |
+          set -e
+          IMG_DIR="build-armbian/armbian-files/different-files/wxy-oect/rootfs"
+          OUT_DIR="out"
+          
+          IMG=$(ls ${OUT_DIR}/*.img 2>/dev/null | head -n 1)
+          if [ -z "$IMG" ]; then
+            IMG=$(ls ${OUT_DIR}/*.img.gz 2>/dev/null | head -n 1)
+            if [ -n "$IMG" ]; then
+              gunzip -f "$IMG"
+              IMG="${IMG%.gz}"
+            fi
+          fi
+          
+          if [ -z "$IMG" ]; then
+            echo "ERROR: No .img file found in ${OUT_DIR}"
+            exit 1
+          fi
+          
+          echo "Found image: $IMG"
+          
+          LOOP=$(sudo losetup --find --show "$IMG")
+          LOOP_DEV="${LOOP}p1"
+          if [ ! -b "$LOOP_DEV" ]; then
+            LOOP_DEV="${LOOP}p2"
+          fi
+          
+          sudo mkdir -p /mnt/nas-img
+          sudo mount "$LOOP_DEV" /mnt/nas-img
+          
+          if [ -d "${IMG_DIR}/etc" ]; then
+            sudo cp -rv ${IMG_DIR}/etc/* /mnt/nas-img/etc/ 2>/dev/null || true
+          fi
+          
+          if [ -d "${IMG_DIR}/opt" ]; then
+            sudo mkdir -p /mnt/nas-img/opt
+            sudo cp -rv ${IMG_DIR}/opt/* /mnt/nas-img/opt/ 2>/dev/null || true
+          fi
+          
+          sync
+          sudo umount /mnt/nas-img
+          sudo losetup -d "$LOOP"
+          sudo rmdir /mnt/nas-img
+          
+          echo "NAS customization injected successfully!"
+
+      - name: Compress image
+        run: |
+          cd out
+          if command -v pigz &>/dev/null; then
+            pigz -qf *.img 2>/dev/null || gzip -qf *.img 2>/dev/null || true
+          else
+            gzip -qf *.img 2>/dev/null || true
+          fi
+          ls -lh
 
       - name: Upload NAS image artifact
         uses: actions/upload-artifact@v4
@@ -84,13 +146,15 @@ jobs:
             - SSH (openssh-server)
             - Samba (文件共享)
             - Docker (容器运行时)
+            - Web UI 管理面板 (:8080)
             
             ### 精简内容
-            - 禁用了 ModemManager, bluetooth, cups, thermald 等服务
+            - 禁用了 ModemManager, bluetooth, cups, thermald, colord, pulseaudio 等服务
             - 移除了桌面环境和多余工具
-            - 预计开机内存占用: < 150MB
+            - 预计开机内存占用: < 120MB
             
-            ### 使用方法
+            ### 首次使用
             1. 下载并解压 .img 文件
             2. 使用 RKDevTool 刷入 eMMC 或 TF 卡
             3. 首次启动后运行: `bash /opt/nas/install-nas.sh`
+            4. 浏览器访问 http://NAS_IP:8080 管理 NAS
