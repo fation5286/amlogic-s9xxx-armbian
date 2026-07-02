@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/nas/webui/nas-webui
+ExecStart=/usr/bin/python3 /opt/nas/webui/nas-webui.py
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

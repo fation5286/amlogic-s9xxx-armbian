@@ -27,19 +27,14 @@ curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun 2>/dev/null || curl
 systemctl enable --now docker 2>/dev/null || { dockerd &>/dev/null &; }
 info "Docker 安装完成"
 
-# ---- 3. 编译安装 Web UI ----
-info "编译 Web UI..."
-if command -v go &>/dev/null; then
-    cd /opt/nas/webui
-    GOARCH=arm64 GOOS=linux go build -ldflags="-s -w" -o nas-webui server.go
-    chmod +x nas-webui
-    cp /opt/nas/webui/nas-webui.service /etc/systemd/system/ 2>/dev/null || true
-    systemctl daemon-reload
-    systemctl enable --now nas-webui 2>/dev/null || { /opt/nas/webui/nas-webui &>/dev/null &; }
-    info "Web UI 已启动 (http://NAS_IP:8080)"
-else
-    warn "Go 未安装，跳过 Web UI 编译"
-fi
+# ---- 3. 启动 Web UI (Python 零编译) ----
+info "启动 Web UI..."
+cp /opt/nas/webui/nas-webui.service /etc/systemd/system/ 2>/dev/null || true
+systemctl daemon-reload
+systemctl enable --now nas-webui 2>/dev/null || {
+    python3 /opt/nas/webui/nas-webui.py &>/dev/null &
+}
+info "Web UI 已启动 (http://NAS_IP:8080)"
 
 # ---- 4. 创建目录结构 ----
 info "创建目录结构..."
