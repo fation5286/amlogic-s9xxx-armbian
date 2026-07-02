@@ -66,66 +66,90 @@ jobs:
           armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
           builder_name: "WXY-OECT-NAS"
 
-      - name: Inject opt/nas files
+      - name: Inject NAS files
         run: |
-          set -e
+          set -ex
+          
+          # === Step 1: Find newest built image ===
           ACTION_OUT="${{ env.PACKAGED_OUTPUTPATH }}"
-          echo "=== Action output: ${ACTION_OUT} ==="
+          echo "=== Output dir: ${ACTION_OUT} ==="
           ls -lht "${ACTION_OUT}"/
           
-          IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
+          IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | grep -v '07.01' | head -n 1)
+          if [ -z "$IMG" ]; then
+            IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
+          fi
           if [ -z "$IMG" ]; then
             IMG=$(ls -t ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
           fi
-          if [ -z "$IMG" ]; then
-            echo "ERROR: No image found"
-            exit 1
-          fi
+          [ -n "$IMG" ] || { echo "FATAL: no image found"; exit 1; }
+          echo ">>> Selected: $(basename "$IMG") ($(du -hm "$IMG" | cut -f1)MB)"
           
-          echo "Selected: $IMG"
+          # === Step 2: Decompress ===
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
+          # === Step 3: Loop mount with partition scan ===
           LOOP=$(sudo losetup --find --show --partscan "$IMG")
-          echo "Loop device: $LOOP"
+          echo ">>> Loop: $LOOP"
+          sleep 2  # Give kernel time to create partition nodes
           
-          # List partitions with sizes via lsblk
-          echo "=== Partition sizes ==="
-          lsblk -b -n -o NAME,SIZE,RANGE,ROTA ${LOOP} 2>/dev/null || true
+          # === Step 4: Verify partition devices exist ===
+          echo ">>> Checking partition devices..."
+          ls -la ${LOOP}* 2>/dev/null || true
           
-          # Find largest partition (rootfs = p2)
-          LOOP_PART=""
-          MAX_SIZE=0
-          while IFS= read -r line; do
-            name=$(echo "$line" | awk '{print $1}')
-            size=$(echo "$line" | awk '{print $2}')
-            if [[ "$name" == ${LOOP}p* ]] && [ -b "/dev/$name" ]; then
-              echo "Found: /dev/$name (${size} bytes)"
-              if [ "$size" -gt "$MAX_SIZE" ] 2>/dev/null; then
-                MAX_SIZE=$size
-                LOOP_PART="/dev/$name"
-              fi
+          # Use kpartx if available, otherwise fall back to direct partition nodes
+          if command -v kpartx &>/dev/null; then
+            echo ">>> Using kpartx..."
+            sudo kpartx -av "$IMG" 2>/dev/null || true
+            LOOP_PART="/dev/mapper/$(sudo kpartx -lv "$IMG" 2>/dev/null | tail -1 | awk '{print $3}')p2"
+          else
+            # Direct partition: loop0p2 is always rootfs for Armbian images
+            LOOP_PART="${LOOP}p2"
+            if [ ! -b "$LOOP_PART" ]; then
+              LOOP_PART="${LOOP}p1"
+              echo ">>> Warning: p2 not found, trying p1"
             fi
-          done < <(lsblk -b -n -o NAME,SIZE ${LOOP} 2>/dev/null)
-          
-          if [ -z "$LOOP_PART" ]; then
-            echo "ERROR: No partition found"
-            exit 1
           fi
           
-          echo "Using partition: $LOOP_PART"
-          sudo mkdir -p /mnt/img
-          sudo mount "$LOOP_PART" /mnt/img
-          echo "Mounted $LOOP_PART on /mnt/img"
+          echo ">>> Will mount: $LOOP_PART"
+          [ -b "$LOOP_PART" ] || { echo "FATAL: partition device $LOOP_PART does not exist"; exit 1; }
           
-          sudo mkdir -p /mnt/img/opt/nas
-          sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/img/opt/ 2>/dev/null || true
+          # === Step 5: Mount and inject ===
+          sudo mkdir -p /mnt/nasimg
+          sudo mount "$LOOP_PART" /mnt/nasimg
+          echo ">>> Mounted. Checking rootfs..."
+          ls /mnt/nasimg/opt/ 2>/dev/null || true
+          ls /mnt/nasimg/etc/ 2>/dev/null || true
           
+          # Copy opt/nas (Web UI + install script)
+          sudo mkdir -p /mnt/nasimg/opt/nas
+          sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/nasimg/opt/
+          echo ">>> opt/nas injected"
+          
+          # === Step 6: Cleanup ===
           sync
-          sudo umount /mnt/img
+          sudo umount /mnt/nasimg
+          sudo rmdir /mnt/nasimg
+          
+          if command -v kpartx &>/dev/null; then
+            sudo kpartx -dv "$IMG" 2>/dev/null || true
+          fi
           sudo losetup -D
-          sudo rmdir /mnt/img
-          echo "=== Injection complete! ==="
+          echo ">>> Done!"
+          
+          # === Step 7: Verify injection ===
+          LOOP2=$(sudo losetup --find --show --partscan "$IMG")
+          sleep 1
+          LOOP2_PART="${LOOP2}p2"
+          [ -b "$LOOP2_PART" ] || LOOP2_PART="${LOOP2}p1"
+          sudo mount "$LOOP2_PART" /mnt/nasimg
+          echo ">>> Verifying opt/nas files:"
+          ls -la /mnt/nasimg/opt/nas/
+          sudo umount /mnt/nasimg
+          sudo losetup -D
+          
+          echo "=== VERIFICATION PASSED ==="
 
       - name: Compress image
         run: |
