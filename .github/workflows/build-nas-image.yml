@@ -121,10 +121,14 @@ jobs:
           
           # Step 7: Double-check — remount and verify again
           LOOP2=$(sudo losetup --find --show --partscan "$IMG")
-          sleep 1
+          sleep 3
           LOOP2_PART=""
           for s in p2 p1 p3; do
-            [ -b "${LOOP2}${s}" ] && LOOP2_PART="${LOOP2}${s}" && break
+            if [ -b "${LOOP2}${s}" ]; then
+              LOOP2_PART="${LOOP2}${s}"
+              break
+            fi
+            sleep 1
           done
           [ -n "$LOOP2_PART" ] || { echo "FATAL: double-check no partition"; exit 1; }
           sudo mkdir -p /mnt/nasimg
