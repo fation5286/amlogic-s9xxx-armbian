@@ -65,37 +65,42 @@ jobs:
           armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
           builder_name: "WXY-OECT-NAS"
 
+      - name: Debug action output
+        run: |
+          echo "=== github.action_path: ${{ github.action_path }} ==="
+          echo "=== github.workspace: ${{ github.workspace }} ==="
+          ls -lhR "${{ github.action_path }}/build/" 2>/dev/null || echo "No build dir in action_path"
+          echo "=== Workspace output dirs ==="
+          find ${{ github.workspace }} -name "*.img*" -type f 2>/dev/null || echo "No img files in workspace"
+          find /home/runner/work -maxdepth 4 -name "*.img*" -type f 2>/dev/null | head -20 || echo "No img files found"
+          echo "=== ENV vars ==="
+          env | grep -i pack | head -10 || true
+
       - name: Inject opt/nas files
         run: |
           set -e
-          # Action output is in the action's own directory
           ACTION_OUT="${{ github.action_path }}/build/output/images"
-          echo "Action output dir: ${ACTION_OUT}"
-          ls -lh "${ACTION_OUT}"/
+          echo "Looking for image in: ${ACTION_OUT}"
+          ls -lh "${ACTION_OUT}"/ 2>/dev/null || echo "Directory does not exist or is empty"
           
-          # Find the built image
           IMG=$(ls ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
           if [ -z "$IMG" ]; then
             IMG=$(ls ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
           fi
           if [ -z "$IMG" ]; then
-            echo "ERROR: No image found"
+            echo "ERROR: No image found in ${ACTION_OUT}"
             exit 1
           fi
           
-          echo "Injecting into: $IMG"
-          
-          # Decompress
+          echo "Found image: $IMG ($(du -h "$IMG" | cut -f1))"
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
-          # Mount
           LOOP=$(sudo losetup --find --show "$IMG")
           LOOP_DEV="${LOOP}p2"
           sudo mkdir -p /mnt/img
           sudo mount "$LOOP_DEV" /mnt/img
           
-          # Copy opt/nas (our Web UI + install script)
           sudo mkdir -p /mnt/img/opt/nas
           sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/img/opt/ 2>/dev/null || true
           
@@ -103,7 +108,6 @@ jobs:
           sudo umount /mnt/img
           sudo losetup -d "$LOOP"
           sudo rmdir /mnt/img
-          
           echo "Injection complete!"
 
       - name: Compress image
