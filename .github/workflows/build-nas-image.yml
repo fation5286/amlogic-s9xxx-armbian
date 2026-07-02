@@ -53,6 +53,7 @@ jobs:
           submodules: 'recursive'
 
       - name: Build NAS image
+        id: build
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: armbian
@@ -65,34 +66,23 @@ jobs:
           armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
           builder_name: "WXY-OECT-NAS"
 
-      - name: Debug action output
-        run: |
-          echo "=== github.action_path: ${{ github.action_path }} ==="
-          echo "=== github.workspace: ${{ github.workspace }} ==="
-          ls -lhR "${{ github.action_path }}/build/" 2>/dev/null || echo "No build dir in action_path"
-          echo "=== Workspace output dirs ==="
-          find ${{ github.workspace }} -name "*.img*" -type f 2>/dev/null || echo "No img files in workspace"
-          find /home/runner/work -maxdepth 4 -name "*.img*" -type f 2>/dev/null | head -20 || echo "No img files found"
-          echo "=== ENV vars ==="
-          env | grep -i pack | head -10 || true
-
       - name: Inject opt/nas files
         run: |
           set -e
-          ACTION_OUT="${{ github.action_path }}/build/output/images"
-          echo "Looking for image in: ${ACTION_OUT}"
-          ls -lh "${ACTION_OUT}"/ 2>/dev/null || echo "Directory does not exist or is empty"
+          ACTION_OUT="${{ env.PACKAGED_OUTPUTPATH }}"
+          echo "Action output path: ${ACTION_OUT}"
+          ls -lh "${ACTION_OUT}"/
           
           IMG=$(ls ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
           if [ -z "$IMG" ]; then
             IMG=$(ls ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
           fi
           if [ -z "$IMG" ]; then
-            echo "ERROR: No image found in ${ACTION_OUT}"
+            echo "ERROR: No image found"
             exit 1
           fi
           
-          echo "Found image: $IMG ($(du -h "$IMG" | cut -f1))"
+          echo "Found: $IMG"
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
@@ -108,11 +98,11 @@ jobs:
           sudo umount /mnt/img
           sudo losetup -d "$LOOP"
           sudo rmdir /mnt/img
-          echo "Injection complete!"
+          echo "Done!"
 
       - name: Compress image
         run: |
-          cd "${{ github.action_path }}/build/output/images"
+          cd "${{ env.PACKAGED_OUTPUTPATH }}"
           gzip -qf *.img 2>/dev/null || true
           ls -lh
 
@@ -120,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nas-image-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}
-          path: ${{ github.action_path }}/build/output/images/*.img*
+          path: ${{ env.PACKAGED_OUTPUTPATH }}/*.img*
           retention-days: 30
 
       - name: Create Release
@@ -128,7 +118,7 @@ jobs:
         with:
           name: WXY-OECT NAS Image ${{ github.event.inputs.os_version }} ${{ github.event.inputs.kernel_version }}
           tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
-          files: ${{ github.action_path }}/build/output/images/*.img*
+          files: ${{ env.PACKAGED_OUTPUTPATH }}/*.img*
           body: |
             ## WXY-OECT NAS 专用镜像
             
