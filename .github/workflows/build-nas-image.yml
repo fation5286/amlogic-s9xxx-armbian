@@ -70,86 +70,67 @@ jobs:
         run: |
           set -ex
           
-          # === Step 1: Find newest built image ===
+          # Step 1: Find newest built image (skip original downloaded)
           ACTION_OUT="${{ env.PACKAGED_OUTPUTPATH }}"
-          echo "=== Output dir: ${ACTION_OUT} ==="
-          ls -lht "${ACTION_OUT}"/
-          
           IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | grep -v '07.01' | head -n 1)
-          if [ -z "$IMG" ]; then
-            IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
-          fi
-          if [ -z "$IMG" ]; then
-            IMG=$(ls -t ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
-          fi
-          [ -n "$IMG" ] || { echo "FATAL: no image found"; exit 1; }
-          echo ">>> Selected: $(basename "$IMG") ($(du -hm "$IMG" | cut -f1)MB)"
+          [ -z "$IMG" ] && IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
+          [ -z "$IMG" ] && IMG=$(ls -t ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
+          [ -n "$IMG" ] || { echo "FATAL: no image"; exit 1; }
+          echo ">>> Image: $(basename "$IMG") ($(du -hm "$IMG" | cut -f1)MB)"
           
-          # === Step 2: Decompress ===
+          # Step 2: Decompress
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
-          # === Step 3: Loop mount with partition scan ===
+          # Step 3: Loop mount with --partscan + sleep for kernel
           LOOP=$(sudo losetup --find --show --partscan "$IMG")
-          echo ">>> Loop: $LOOP"
-          sleep 2  # Give kernel time to create partition nodes
+          sleep 2
           
-          # === Step 4: Verify partition devices exist ===
-          echo ">>> Checking partition devices..."
-          ls -la ${LOOP}* 2>/dev/null || true
-          
-          # Use kpartx if available, otherwise fall back to direct partition nodes
-          if command -v kpartx &>/dev/null; then
-            echo ">>> Using kpartx..."
-            sudo kpartx -av "$IMG" 2>/dev/null || true
-            LOOP_PART="/dev/mapper/$(sudo kpartx -lv "$IMG" 2>/dev/null | tail -1 | awk '{print $3}')p2"
-          else
-            # Direct partition: loop0p2 is always rootfs for Armbian images
-            LOOP_PART="${LOOP}p2"
-            if [ ! -b "$LOOP_PART" ]; then
-              LOOP_PART="${LOOP}p1"
-              echo ">>> Warning: p2 not found, trying p1"
+          # Step 4: Find partition device — brute force scan
+          LOOP_PART=""
+          for suffix in p1 p2 p3 p4 p5 p6 p7 p8 p9 p10; do
+            candidate="${LOOP}${suffix}"
+            if [ -b "$candidate" ]; then
+              LOOP_PART="$candidate"
+              echo ">>> Found partition: $LOOP_PART"
+              break
             fi
-          fi
+          done
+          [ -n "$LOOP_PART" ] || { echo "FATAL: no partition on $LOOP"; ls -la ${LOOP}*; exit 1; }
           
-          echo ">>> Will mount: $LOOP_PART"
-          [ -b "$LOOP_PART" ] || { echo "FATAL: partition device $LOOP_PART does not exist"; exit 1; }
-          
-          # === Step 5: Mount and inject ===
+          # Step 5: Mount, inject, verify
           sudo mkdir -p /mnt/nasimg
           sudo mount "$LOOP_PART" /mnt/nasimg
-          echo ">>> Mounted. Checking rootfs..."
-          ls /mnt/nasimg/opt/ 2>/dev/null || true
-          ls /mnt/nasimg/etc/ 2>/dev/null || true
           
-          # Copy opt/nas (Web UI + install script)
+          # Inject opt/nas
           sudo mkdir -p /mnt/nasimg/opt/nas
           sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/nasimg/opt/
-          echo ">>> opt/nas injected"
           
-          # === Step 6: Cleanup ===
+          # Verify
+          echo ">>> Verified opt/nas:"
+          ls -la /mnt/nasimg/opt/nas/
+          [ -f /mnt/nasimg/opt/nas/install-nas.sh ] || { echo "FATAL: install-nas.sh missing"; exit 1; }
+          [ -d /mnt/nasimg/opt/nas/webui ] || { echo "FATAL: webui missing"; exit 1; }
+          
+          # Step 6: Cleanup
           sync
           sudo umount /mnt/nasimg
           sudo rmdir /mnt/nasimg
-          
-          if command -v kpartx &>/dev/null; then
-            sudo kpartx -dv "$IMG" 2>/dev/null || true
-          fi
           sudo losetup -D
-          echo ">>> Done!"
+          echo ">>> Injection verified and cleaned up."
           
-          # === Step 7: Verify injection ===
+          # Step 7: Double-check — remount and verify again
           LOOP2=$(sudo losetup --find --show --partscan "$IMG")
           sleep 1
-          LOOP2_PART="${LOOP2}p2"
-          [ -b "$LOOP2_PART" ] || LOOP2_PART="${LOOP2}p1"
+          for s in p1 p2 p3; do
+            [ -b "${LOOP2}${s}" ] && LOOP2_PART="${LOOP2}${s}" && break
+          done
           sudo mount "$LOOP2_PART" /mnt/nasimg
-          echo ">>> Verifying opt/nas files:"
-          ls -la /mnt/nasimg/opt/nas/
+          echo ">>> Double-check opt/nas:"
+          ls /mnt/nasimg/opt/nas/
           sudo umount /mnt/nasimg
           sudo losetup -D
-          
-          echo "=== VERIFICATION PASSED ==="
+          echo "=== ALL CHECKS PASSED ==="
 
       - name: Compress image
         run: |
