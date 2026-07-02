@@ -73,7 +73,6 @@ jobs:
           echo "=== Action output: ${ACTION_OUT} ==="
           ls -lht "${ACTION_OUT}"/
           
-          # Pick the NEWEST .img.gz (skip the original downloaded file)
           IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
           if [ -z "$IMG" ]; then
             IMG=$(ls -t ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
@@ -87,27 +86,27 @@ jobs:
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
-          # Attach loop device with --partscan to expose partitions
           LOOP=$(sudo losetup --find --show --partscan "$IMG")
           echo "Loop device: $LOOP"
           
-          # Show available partitions
-          echo "=== Partitions ==="
-          ls -la ${LOOP}* 2>/dev/null || true
+          # List partitions with sizes via lsblk
+          echo "=== Partition sizes ==="
+          lsblk -b -n -o NAME,SIZE,RANGE,ROTA ${LOOP} 2>/dev/null || true
           
-          # Find the largest partition (rootfs = p2)
+          # Find largest partition (rootfs = p2)
           LOOP_PART=""
           MAX_SIZE=0
-          for dev in ${LOOP}p*; do
-            if [ -b "$dev" ]; then
-              SIZE=$(blockdev --getsize64 "$dev" 2>/dev/null || echo 0)
-              echo "Found: $dev ($SIZE bytes)"
-              if [ "$SIZE" -gt "$MAX_SIZE" ]; then
-                MAX_SIZE=$SIZE
-                LOOP_PART=$dev
+          while IFS= read -r line; do
+            name=$(echo "$line" | awk '{print $1}')
+            size=$(echo "$line" | awk '{print $2}')
+            if [[ "$name" == ${LOOP}p* ]] && [ -b "/dev/$name" ]; then
+              echo "Found: /dev/$name (${size} bytes)"
+              if [ "$size" -gt "$MAX_SIZE" ] 2>/dev/null; then
+                MAX_SIZE=$size
+                LOOP_PART="/dev/$name"
               fi
             fi
-          done
+          done < <(lsblk -b -n -o NAME,SIZE ${LOOP} 2>/dev/null)
           
           if [ -z "$LOOP_PART" ]; then
             echo "ERROR: No partition found"
@@ -119,7 +118,6 @@ jobs:
           sudo mount "$LOOP_PART" /mnt/img
           echo "Mounted $LOOP_PART on /mnt/img"
           
-          # Copy opt/nas files
           sudo mkdir -p /mnt/img/opt/nas
           sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/img/opt/ 2>/dev/null || true
           
