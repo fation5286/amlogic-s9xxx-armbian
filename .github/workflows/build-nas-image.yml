@@ -68,42 +68,58 @@ jobs:
         run: |
           set -e
           IMG_DIR="build-armbian/armbian-files/different-files/wxy-oect/rootfs"
-          OUT_DIR="out"
+          OUT_DIR="build-armbian/out"
           
-          IMG=$(ls ${OUT_DIR}/*.img 2>/dev/null | head -n 1)
+          # Debug: show what's in the output dir
+          echo "=== Contents of ${OUT_DIR} ==="
+          ls -lh ${OUT_DIR}/ 2>/dev/null || echo "Directory empty or not found"
+          
+          # Find the built image (.img.gz takes priority over .img)
+          IMG=$(ls ${OUT_DIR}/*.img.gz 2>/dev/null | head -n 1)
           if [ -z "$IMG" ]; then
-            IMG=$(ls ${OUT_DIR}/*.img.gz 2>/dev/null | head -n 1)
-            if [ -n "$IMG" ]; then
-              gunzip -f "$IMG"
-              IMG="${IMG%.gz}"
-            fi
+            IMG=$(ls ${OUT_DIR}/*.img 2>/dev/null | head -n 1)
           fi
           
           if [ -z "$IMG" ]; then
-            echo "ERROR: No .img file found in ${OUT_DIR}"
+            echo "ERROR: No .img or .img.gz file found in ${OUT_DIR}"
+            echo "Available files:"
+            ls -lhR ${OUT_DIR}/ 2>/dev/null || echo "(nothing)"
             exit 1
           fi
           
-          echo "Found image: $IMG"
+          echo "Found image: $IMG ($(du -h "$IMG" | cut -f1))"
           
+          # Decompress if needed
+          if [[ "$IMG" == *.gz ]]; then
+            echo "Decompressing..."
+            gunzip -f "$IMG"
+            IMG="${IMG%.gz}"
+          fi
+          
+          # Mount the image
           LOOP=$(sudo losetup --find --show "$IMG")
           LOOP_DEV="${LOOP}p1"
           if [ ! -b "$LOOP_DEV" ]; then
             LOOP_DEV="${LOOP}p2"
           fi
           
+          echo "Mounting ${LOOP_DEV}..."
           sudo mkdir -p /mnt/nas-img
           sudo mount "$LOOP_DEV" /mnt/nas-img
           
+          echo "Copying NAS customization files..."
+          # Copy etc files
           if [ -d "${IMG_DIR}/etc" ]; then
             sudo cp -rv ${IMG_DIR}/etc/* /mnt/nas-img/etc/ 2>/dev/null || true
           fi
           
+          # Copy opt files
           if [ -d "${IMG_DIR}/opt" ]; then
             sudo mkdir -p /mnt/nas-img/opt
             sudo cp -rv ${IMG_DIR}/opt/* /mnt/nas-img/opt/ 2>/dev/null || true
           fi
           
+          # Sync and unmount
           sync
           sudo umount /mnt/nas-img
           sudo losetup -d "$LOOP"
@@ -113,7 +129,7 @@ jobs:
 
       - name: Compress image
         run: |
-          cd out
+          cd build-armbian/out
           if command -v pigz &>/dev/null; then
             pigz -qf *.img 2>/dev/null || gzip -qf *.img 2>/dev/null || true
           else
@@ -125,7 +141,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nas-image-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}
-          path: out/*.img*
+          path: build-armbian/out/*.img*
           retention-days: 30
 
       - name: Create Release
@@ -133,7 +149,7 @@ jobs:
         with:
           name: WXY-OECT NAS Image ${{ github.event.inputs.os_version }} ${{ github.event.inputs.kernel_version }}
           tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
-          files: out/*.img*
+          files: build-armbian/out/*.img*
           body: |
             ## WXY-OECT NAS 专用镜像
             
