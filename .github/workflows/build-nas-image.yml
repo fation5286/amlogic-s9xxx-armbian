@@ -57,7 +57,7 @@ jobs:
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: armbian
-          armbian_path: https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_resolute_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_resolute_6.1.141_server_2026.07.01.img.gz
+          armbian_path: https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_bookworm_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
           armbian_board: ${{ github.event.inputs.target_device }}
           armbian_kernel: ${{ github.event.inputs.kernel_version }}
           auto_kernel: true
@@ -83,7 +83,6 @@ jobs:
           LOOP=$(sudo losetup --find --show --partscan "$IMG")
           sleep 2
           
-          # rootfs is ALWAYS p2 for Armbian images — try p2 first
           if [ -b "${LOOP}p2" ]; then
             LOOP_PART="${LOOP}p2"
           elif [ -b "${LOOP}p1" ]; then
@@ -98,11 +97,9 @@ jobs:
           sudo mkdir -p /mnt/nasimg
           sudo mount "$LOOP_PART" /mnt/nasimg
           
-          # Inject opt/nas
           sudo mkdir -p /mnt/nasimg/opt/nas
           sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/nasimg/opt/
           
-          # Verify
           echo ">>> Verified opt/nas:"
           ls -la /mnt/nasimg/opt/nas/
           [ -f /mnt/nasimg/opt/nas/install-nas.sh ] || { echo "FATAL: install-nas.sh missing"; exit 1; }
@@ -114,7 +111,6 @@ jobs:
           sudo losetup -D
           echo ">>> Done."
           
-          # Double-check
           LOOP2=$(sudo losetup --find --show --partscan "$IMG")
           sleep 3
           [ -b "${LOOP2}p2" ] && LOOP2_PART="${LOOP2}p2" || LOOP2_PART="${LOOP2}p1"
