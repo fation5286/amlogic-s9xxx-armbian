@@ -87,30 +87,34 @@ jobs:
           gunzip -f "$IMG"
           IMG="${IMG%.gz}"
           
-          # Attach loop device
-          LOOP=$(sudo losetup --find --show "$IMG")
+          # Attach loop device with --partscan to expose partitions
+          LOOP=$(sudo losetup --find --show --partscan "$IMG")
           echo "Loop device: $LOOP"
           
-          # Detect partitions automatically
-          echo "=== Partition table ==="
-          sudo fdisk -l "$LOOP" 2>/dev/null || sudo parted "$LOOP" print 2>/dev/null || true
+          # Show available partitions
+          echo "=== Partitions ==="
+          ls -la ${LOOP}* 2>/dev/null || true
           
+          # Find the largest partition (rootfs = p2)
           LOOP_PART=""
-          # Try p1, p2, p3... until we find a valid block device
-          for p in 1 2 3; do
-            DEV="${LOOP}p${p}"
-            if [ -b "$DEV" ]; then
-              LOOP_PART="$DEV"
-              echo "Found partition: $DEV"
-              break
+          MAX_SIZE=0
+          for dev in ${LOOP}p*; do
+            if [ -b "$dev" ]; then
+              SIZE=$(blockdev --getsize64 "$dev" 2>/dev/null || echo 0)
+              echo "Found: $dev ($SIZE bytes)"
+              if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+                MAX_SIZE=$SIZE
+                LOOP_PART=$dev
+              fi
             fi
           done
           
           if [ -z "$LOOP_PART" ]; then
-            echo "ERROR: No partition found on loop device $LOOP"
+            echo "ERROR: No partition found"
             exit 1
           fi
           
+          echo "Using partition: $LOOP_PART"
           sudo mkdir -p /mnt/img
           sudo mount "$LOOP_PART" /mnt/img
           echo "Mounted $LOOP_PART on /mnt/img"
@@ -121,7 +125,7 @@ jobs:
           
           sync
           sudo umount /mnt/img
-          sudo losetup -d "$LOOP"
+          sudo losetup -D
           sudo rmdir /mnt/img
           echo "=== Injection complete! ==="
 
