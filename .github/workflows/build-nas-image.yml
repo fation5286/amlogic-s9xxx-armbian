@@ -52,7 +52,7 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Build base Armbian image
+      - name: Build NAS image
         uses: ophub/amlogic-s9xxx-armbian@main
         with:
           build_target: armbian
@@ -62,86 +62,61 @@ jobs:
           auto_kernel: true
           armbian_fstype: ext4
           armbian_size: 512/3000
+          armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
           builder_name: "WXY-OECT-NAS"
 
-      - name: Inject NAS customization files
+      - name: Inject opt/nas files
         run: |
           set -e
-          IMG_DIR="build-armbian/armbian-files/different-files/wxy-oect/rootfs"
-          OUT_DIR="build-armbian/out"
+          # Action output is in the action's own directory
+          ACTION_OUT="${{ github.action_path }}/build/output/images"
+          echo "Action output dir: ${ACTION_OUT}"
+          ls -lh "${ACTION_OUT}"/
           
-          # Debug: show what's in the output dir
-          echo "=== Contents of ${OUT_DIR} ==="
-          ls -lh ${OUT_DIR}/ 2>/dev/null || echo "Directory empty or not found"
-          
-          # Find the built image (.img.gz takes priority over .img)
-          IMG=$(ls ${OUT_DIR}/*.img.gz 2>/dev/null | head -n 1)
+          # Find the built image
+          IMG=$(ls ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
           if [ -z "$IMG" ]; then
-            IMG=$(ls ${OUT_DIR}/*.img 2>/dev/null | head -n 1)
+            IMG=$(ls ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
           fi
-          
           if [ -z "$IMG" ]; then
-            echo "ERROR: No .img or .img.gz file found in ${OUT_DIR}"
-            echo "Available files:"
-            ls -lhR ${OUT_DIR}/ 2>/dev/null || echo "(nothing)"
+            echo "ERROR: No image found"
             exit 1
           fi
           
-          echo "Found image: $IMG ($(du -h "$IMG" | cut -f1))"
+          echo "Injecting into: $IMG"
           
-          # Decompress if needed
-          if [[ "$IMG" == *.gz ]]; then
-            echo "Decompressing..."
-            gunzip -f "$IMG"
-            IMG="${IMG%.gz}"
-          fi
+          # Decompress
+          gunzip -f "$IMG"
+          IMG="${IMG%.gz}"
           
-          # Mount the image
+          # Mount
           LOOP=$(sudo losetup --find --show "$IMG")
-          LOOP_DEV="${LOOP}p1"
-          if [ ! -b "$LOOP_DEV" ]; then
-            LOOP_DEV="${LOOP}p2"
-          fi
+          LOOP_DEV="${LOOP}p2"
+          sudo mkdir -p /mnt/img
+          sudo mount "$LOOP_DEV" /mnt/img
           
-          echo "Mounting ${LOOP_DEV}..."
-          sudo mkdir -p /mnt/nas-img
-          sudo mount "$LOOP_DEV" /mnt/nas-img
+          # Copy opt/nas (our Web UI + install script)
+          sudo mkdir -p /mnt/img/opt/nas
+          sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/img/opt/ 2>/dev/null || true
           
-          echo "Copying NAS customization files..."
-          # Copy etc files
-          if [ -d "${IMG_DIR}/etc" ]; then
-            sudo cp -rv ${IMG_DIR}/etc/* /mnt/nas-img/etc/ 2>/dev/null || true
-          fi
-          
-          # Copy opt files
-          if [ -d "${IMG_DIR}/opt" ]; then
-            sudo mkdir -p /mnt/nas-img/opt
-            sudo cp -rv ${IMG_DIR}/opt/* /mnt/nas-img/opt/ 2>/dev/null || true
-          fi
-          
-          # Sync and unmount
           sync
-          sudo umount /mnt/nas-img
+          sudo umount /mnt/img
           sudo losetup -d "$LOOP"
-          sudo rmdir /mnt/nas-img
+          sudo rmdir /mnt/img
           
-          echo "NAS customization injected successfully!"
+          echo "Injection complete!"
 
       - name: Compress image
         run: |
-          cd build-armbian/out
-          if command -v pigz &>/dev/null; then
-            pigz -qf *.img 2>/dev/null || gzip -qf *.img 2>/dev/null || true
-          else
-            gzip -qf *.img 2>/dev/null || true
-          fi
+          cd "${{ github.action_path }}/build/output/images"
+          gzip -qf *.img 2>/dev/null || true
           ls -lh
 
       - name: Upload NAS image artifact
         uses: actions/upload-artifact@v4
         with:
           name: nas-image-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}
-          path: build-armbian/out/*.img*
+          path: ${{ github.action_path }}/build/output/images/*.img*
           retention-days: 30
 
       - name: Create Release
@@ -149,7 +124,7 @@ jobs:
         with:
           name: WXY-OECT NAS Image ${{ github.event.inputs.os_version }} ${{ github.event.inputs.kernel_version }}
           tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
-          files: build-armbian/out/*.img*
+          files: ${{ github.action_path }}/build/output/images/*.img*
           body: |
             ## WXY-OECT NAS 专用镜像
             
