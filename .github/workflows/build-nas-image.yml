@@ -6,7 +6,7 @@ on:
       os_version:
         description: '操作系统版本'
         required: true
-        default: 'resolute'
+        default: 'bookworm'
         type: choice
         options:
           - resolute
@@ -66,7 +66,7 @@ jobs:
           armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
           builder_name: "WXY-OECT-NAS"
 
-      - name: Inject NAS files
+      - name: Inject NAS files (Web UI v3 - 按需启动)
         run: |
           set -ex
           
@@ -97,13 +97,31 @@ jobs:
           sudo mkdir -p /mnt/nasimg
           sudo mount "$LOOP_PART" /mnt/nasimg
           
+          # 复制 NAS 文件
           sudo mkdir -p /mnt/nasimg/opt/nas
           sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/nasimg/opt/
           
-          echo ">>> Verified opt/nas:"
+          # 复制精简脚本
+          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/init-nas-services.sh /mnt/nasimg/etc/
+          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/setup-nas-base.sh /mnt/nasimg/etc/
+          
+          # 复制 systemd 服务文件
+          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/systemd/system/nas-webui.service /mnt/nasimg/etc/systemd/system/
+          
+          echo ">>> Verified files:"
           ls -la /mnt/nasimg/opt/nas/
+          ls -la /mnt/nasimg/opt/nas/webui/
+          ls -la /mnt/nasimg/etc/init-nas-services.sh
+          ls -la /mnt/nasimg/etc/systemd/system/nas-webui.service
+          
           [ -f /mnt/nasimg/opt/nas/install-nas.sh ] || { echo "FATAL: install-nas.sh missing"; exit 1; }
-          [ -d /mnt/nasimg/opt/nas/webui ] || { echo "FATAL: webui missing"; exit 1; }
+          [ -f /mnt/nasimg/opt/nas/webui/nas-webui.py ] || { echo "FATAL: nas-webui.py missing"; exit 1; }
+          [ -f /mnt/nasimg/etc/init-nas-services.sh ] || { echo "FATAL: init-nas-services.sh missing"; exit 1; }
+          [ -f /mnt/nasimg/etc/systemd/system/nas-webui.service ] || { echo "FATAL: nas-webui.service missing"; exit 1; }
+          
+          # 设置权限
+          sudo chmod +x /mnt/nasimg/opt/nas/install-nas.sh
+          sudo chmod +x /mnt/nasimg/opt/nas/webui/nas-webui.py
           
           sync
           sudo umount /mnt/nasimg
@@ -116,8 +134,9 @@ jobs:
           [ -b "${LOOP2}p2" ] && LOOP2_PART="${LOOP2}p2" || LOOP2_PART="${LOOP2}p1"
           sudo mkdir -p /mnt/nasimg
           sudo mount "$LOOP2_PART" /mnt/nasimg
-          echo ">>> Double-check opt/nas:"
+          echo ">>> Double-check:"
           ls /mnt/nasimg/opt/nas/
+          ls /mnt/nasimg/opt/nas/webui/
           sudo umount /mnt/nasimg
           sudo rmdir /mnt/nasimg
           sudo losetup -D
@@ -143,12 +162,17 @@ jobs:
           tag_name: nas-${{ github.event.inputs.target_device }}-${{ github.event.inputs.os_version }}-${{ github.sha }}
           files: ${{ env.PACKAGED_OUTPUTPATH }}/*.img*
           body: |
-            ## WXY-OECT NAS 专用镜像
+            ## WXY-OECT NAS 专用镜像 (按需启动版)
             
             - **设备**: ${{ github.event.inputs.target_device }}
             - **系统**: ${{ github.event.inputs.os_version }}
             - **内核**: ${{ github.event.inputs.kernel_version }}
             - **类型**: ${{ github.event.inputs.image_type }}
+            
+            ### 新增特性 (v3)
+            - **按需启动 Web UI**: 访问时自动启动，闲置3分钟后自动退出
+            - **节省资源**: 不使用时内存占用为 0
+            - **类 iStoreOS 界面**: 深色主题，卡片式布局
             
             ### 内置服务
             - SSH (openssh-server)
