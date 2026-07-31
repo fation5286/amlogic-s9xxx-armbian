@@ -66,7 +66,6 @@ jobs:
       - name: Download base Armbian image
         run: |
           cd build/output/images
-          # 下载原始镜像作为基础
           curl -fsSL "https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_bookworm_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz" \
             -o "Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz"
           echo "下载完成"
@@ -78,9 +77,9 @@ jobs:
           # 解压原始镜像
           gunzip -f Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
           
-          # 使用 rebuild 脚本重新打包，应用我们的配置
+          # 使用 rebuild 脚本重新打包
           cd ../..
-          sudo ./rebuild \
+          bash rebuild \
             -b ${{ github.event.inputs.target_device }} \
             -k ${{ github.event.inputs.kernel_version }} \
             -a true \
@@ -167,7 +166,7 @@ jobs:
             - **类型**: ${{ github.event.inputs.image_type }}
             
             ### 构建方式
-            使用仓库自带 rebuild 脚本从源码打包，所有配置直接在仓库中管理
+            使用仓库自带 rebuild 脚本从源码打包
             
             ### 新增特性 (v3)
             - **按需启动 Web UI**: 访问时自动启动，闲置3分钟后自动退出
