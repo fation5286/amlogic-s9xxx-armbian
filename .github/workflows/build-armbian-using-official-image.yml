@@ -40,6 +40,7 @@ on:
           - aio-3399c-ai
           - bdkj-bd-one
           - bdy-g18-pro
+          - bdy-g98
           - beikeyun
           - boca-tcn100
           - boca-tcn200
@@ -90,6 +91,7 @@ on:
           - leez
           - lubancat-1
           - lubancat-2
+          - lubancat-3
           - lubancat-4
           - lx-r3s
           - lyt-t68m
@@ -103,6 +105,7 @@ on:
           - nanopi-m5
           - nanopi-r5c
           - nanopi-r5s
+          - nanopi-som
           - nsy-g16-plus
           - nsy-g68-plus
           - orangepi-3b
@@ -116,6 +119,7 @@ on:
           - photonicat
           - r66s
           - r68s
+          - recomputer-rk3576-devkit
           - renegade-rk3328
           - rk3318-box
           - roceos-k40pro
@@ -235,6 +239,7 @@ on:
           - wocyber-a3
           - wxy-oect
           - wxy-oect-mod
+          - x88pro13
           - x88pro20
           - x98h
           - xiaobao
@@ -312,7 +317,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04-arm
     if: ${{ github.event.repository.owner.id == github.event.sender.id }}
     permissions:
       contents: write
@@ -331,18 +336,18 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android 2>/dev/null
           sudo swapoff -a
           sudo rm -f /swapfile /mnt/swapfile
-          sudo -E apt-get -y update
-          sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo -E apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-build-armbian-depends)
-          sudo -E systemctl daemon-reload
-          #sudo -E apt-get -y full-upgrade
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get clean
+          sudo apt-get -y update
+          sudo apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
+          sudo apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2604-build-armbian-depends)
+          sudo systemctl daemon-reload
+          #sudo apt-get -y full-upgrade
+          sudo apt-get -y autoremove --purge
+          sudo apt-get clean
           sudo sed -i '/NVM_DIR/d;/skel/d' /root/{.bashrc,.profile}
           sudo rm -rf ~/{.cargo,.dotnet,.rustup}
-          sudo -E timedatectl set-timezone "${TZ:-Etc/UTC}"
-          sudo -E ntpdate ntp.ubuntu.com 0.pool.ntp.org || true
-          sudo -E timedatectl set-ntp true
+          sudo timedatectl set-timezone "${TZ:-Etc/UTC}"
+          sudo ntpdate ntp.ubuntu.com 0.pool.ntp.org || true
+          sudo timedatectl set-ntp true
           date -u
           timedatectl status || true
           echo "status=success" >> ${GITHUB_OUTPUT}
