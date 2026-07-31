@@ -1,6 +1,6 @@
 #!/bin/bash
 #===========================================================================
-# WXY-OECT NAS 一键安装脚本
+# WXY-OECT NAS 一键安装脚本 v3
 #===========================================================================
 
 set -e
@@ -9,7 +9,7 @@ info() { echo -e "\033[0;32m[NAS] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[NAS] $1\033[0m"; }
 
 echo "=========================================="
-echo "  WXY-OECT NAS 一键安装脚本 v2"
+echo "  WXY-OECT NAS 一键安装脚本 v3"
 echo "=========================================="
 
 # ---- 1. 安装基础工具 ----
@@ -41,19 +41,28 @@ fi
 systemctl enable --now docker 2>/dev/null || { dockerd &>/dev/null &; }
 info "Docker 安装完成"
 
-# ---- 4. 启动 Web UI ----
-info "启动 Web UI..."
-cp /opt/nas/webui/nas-webui.service /etc/systemd/system/ 2>/dev/null || true
+# ---- 4. 配置 Web UI ----
+info "配置 Web UI..."
+# 确保 Web UI 脚本有执行权限
+chmod +x /opt/nas/webui/nas-webui.py
+
+# 设置默认环境变量
+cat > /etc/default/nas-webui << 'EOF'
+# WXY-OECT NAS Web UI 配置
+IDLE_TIMEOUT=180
+LISTEN_PORT=8080
+EOF
+
+# 启用服务
 systemctl daemon-reload
-systemctl enable --now nas-webui 2>/dev/null || {
-    python3 /opt/nas/webui/nas-webui.py &>/dev/null &
-}
-info "Web UI 已启动 (http://NAS_IP:8080)"
+systemctl enable nas-webui 2>/dev/null || true
+info "Web UI 配置完成"
 
 # ---- 5. 创建目录结构 ----
 info "创建目录结构..."
 mkdir -p /mnt/data/{share,album,downloads,syncthing-config,frp,docker}
 mkdir -p /opt/nas
+mkdir -p /var/log
 
 # ---- 6. 设置开机自启 ----
 info "设置开机自启..."
@@ -71,7 +80,17 @@ echo "  NAS 安装完成！"
 echo "=========================================="
 IP=$(hostname -I | awk '{print $1}')
 echo "  Samba:     //${IP}/share"
-echo "  Web UI:    http://${IP}:8080"
+echo "  Web UI:    http://${IP}:8080 (闲置3分钟后自动退出)"
 echo "  SSH:       ssh root@${IP}"
 echo ""
-echo "如需修改配置，请编辑 /etc/samba/smb.conf"
+echo "=========================================="
+echo "  Web UI 使用说明"
+echo "=========================================="
+echo "  访问 http://${IP}:8080 打开管理面板"
+echo "  闲置 3 分钟不操作会自动退出，节省资源"
+echo "  再次访问时会自动重新启动"
+echo ""
+echo "  手动控制:"
+echo "    systemctl status nas-webui  # 查看状态"
+echo "    systemctl restart nas-webui # 重启"
+echo ""

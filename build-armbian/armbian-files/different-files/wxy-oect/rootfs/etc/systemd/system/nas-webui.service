@@ -1,15 +1,27 @@
 [Unit]
-Description=WXY-OECT NAS Web UI Manager
-After=network-online.target
+Description=WXY-OECT NAS Web UI Manager (On-Demand)
+Documentation=https://github.com/fation5286/amlogic-s9xxx-armbian
+After=network-online.target docker.service
 Wants=network-online.target
+# 不使用 Requires=docker，让 Web UI 在 Docker 未启动时也能工作
 
 [Service]
 Type=simple
+# 使用 exec 启动，而不是直接运行 python
 ExecStart=/usr/bin/python3 /opt/nas/webui/nas-webui.py
+# 环境变量
+Environment=IDLE_TIMEOUT=180
+# 重启策略
 Restart=on-failure
 RestartSec=5
+# 日志
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=nas-webui
+
+# 资源限制（节省内存）
+MemoryLimit=128M
+CPUQuota=20%
 
 [Install]
 WantedBy=multi-user.target
