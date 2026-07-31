@@ -1,7 +1,7 @@
 #!/bin/bash
 #===========================================================================
-# WXY-OECT NAS专用精简服务脚本
-# 开机自动执行，禁用所有非必要服务，只保留 SSH + Samba + Docker + Web UI
+# WXY-OECT NAS 专用精简服务脚本
+# 开机自动执行，禁用所有非必要服务
 #===========================================================================
 
 set -e
@@ -34,18 +34,21 @@ SERVICES_TO_DISABLE=(
     gvfs-daemon
     pulseaudio
     bluetooth.service
+    systemd-resolved
+    systemd-timesyncd
+    whoopsie
 )
 
 for svc in "${SERVICES_TO_DISABLE[@]}"; do
-    if systemctl list-unit-files "${svc}" &>/dev/null; then
+    if systemctl list-unit-files "${svc}" &>/dev/null 2>&1; then
         systemctl disable --now "${svc}" 2>/dev/null || true
     fi
 done
 
-# ---- 2. 创建 systemd preset 文件，防止 apt install 时重新启用 ----
+# ---- 2. 创建 systemd preset 文件 ----
 mkdir -p /etc/systemd/system-preset
 cat > /etc/systemd/system-preset/99-nas-disable-defaults << 'EOF'
-# WXY-OECT NAS 专用 preset：禁用所有默认开启的非必要服务
+# WXY-OECT NAS 专用 preset
 disable ModemManager
 disable accounts-daemon
 disable bluetooth
@@ -66,6 +69,7 @@ disable systemd-timesyncd
 disable colord
 disable gvfs-daemon
 disable pulseaudio
+disable whoopsie
 EOF
 
 echo "[NAS] 已创建 systemd preset 文件"
@@ -79,7 +83,7 @@ rm -f /etc/cron.monthly/apt
 
 echo "[NAS] 已清理 cron 任务"
 
-# ---- 4. 禁用多余 sysctl 参数 ----
+# ---- 4. 应用 sysctl 优化 ----
 if [ ! -f /etc/sysctl.d/99-nas-applied ]; then
     cat > /etc/sysctl.d/99-nas.conf << 'EOF'
 # WXY-OECT NAS 专用 sysctl 优化
@@ -88,11 +92,13 @@ net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 87380 16777216
 net.ipv4.tcp_wmem = 4096 65536 16777216
 net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_tw_reuse = 1
 vm.swappiness = 10
 vm.vfs_cache_pressure = 50
 vm.dirty_ratio = 20
 vm.dirty_background_ratio = 5
 EOF
+    sysctl -p /etc/sysctl.d/99-nas.conf 2>/dev/null || true
     touch /etc/sysctl.d/99-nas-applied
     echo "[NAS] 已应用 sysctl 优化"
 fi
@@ -112,7 +118,7 @@ DEBIAN_PACKAGES_TO_PURGE=(
 )
 
 for pkg in "${DEBIAN_PACKAGES_TO_PURGE[@]}"; do
-    if dpkg -l "$pkg" &>/dev/null; then
+    if dpkg -l "$pkg" &>/dev/null 2>&1; then
         apt-get purge -y "$pkg" 2>/dev/null || true
     fi
 done
@@ -120,5 +126,3 @@ done
 apt-get autoremove -y 2>/dev/null || true
 
 echo "[NAS] 服务精简完成！"
-echo "[NAS] 当前运行的 systemd 服务:"
-systemctl list-units --type=service --state=running --no-pager 2>/dev/null | head -20
