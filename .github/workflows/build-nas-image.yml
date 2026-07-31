@@ -12,6 +12,7 @@ on:
           - resolute
           - bookworm
           - jammy
+          - trixie
       kernel_version:
         description: '内核版本'
         required: true
@@ -52,34 +53,52 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Build NAS image
-        id: build
-        uses: ophub/amlogic-s9xxx-armbian@main
-        with:
-          build_target: armbian
-          armbian_path: https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_bookworm_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
-          armbian_board: ${{ github.event.inputs.target_device }}
-          armbian_kernel: ${{ github.event.inputs.kernel_version }}
-          auto_kernel: true
-          armbian_fstype: ext4
-          armbian_size: 512/3000
-          armbian_files: build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc
-          builder_name: "WXY-OECT-NAS"
-
-      - name: Inject NAS files (Web UI v3 - 按需启动)
+      - name: Initialize build environment
         run: |
-          set -ex
+          sudo apt-get update
+          sudo apt-get install -y $(cat compile-kernel/tools/script/ubuntu2404-build-armbian-depends)
+          sudo systemctl daemon-reload
+
+      - name: Create output directory
+        run: |
+          mkdir -p build/output/images
+
+      - name: Download base Armbian image
+        run: |
+          cd build/output/images
+          # 下载原始镜像作为基础
+          curl -fsSL "https://github.com/ophub/amlogic-s9xxx-armbian/releases/download/Armbian_bookworm_arm64_server_2026.07/Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz" \
+            -o "Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz"
+          echo "下载完成"
+          ls -lh *.img.gz
+
+      - name: Rebuild Armbian with NAS config
+        run: |
+          cd build/output/images
+          # 解压原始镜像
+          gunzip -f Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
           
-          ACTION_OUT="${{ env.PACKAGED_OUTPUTPATH }}"
-          IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | grep -v '07.01' | head -n 1)
-          [ -z "$IMG" ] && IMG=$(ls -t ${ACTION_OUT}/*.img.gz 2>/dev/null | head -n 1)
-          [ -z "$IMG" ] && IMG=$(ls -t ${ACTION_OUT}/*.img 2>/dev/null | head -n 1)
-          [ -n "$IMG" ] || { echo "FATAL: no image"; exit 1; }
+          # 使用 rebuild 脚本重新打包，应用我们的配置
+          cd ../..
+          sudo ./rebuild \
+            -b ${{ github.event.inputs.target_device }} \
+            -k ${{ github.event.inputs.kernel_version }} \
+            -a true \
+            -t ext4 \
+            -s 512/3000 \
+            -n "WXY-OECT-NAS"
+          
+          echo "打包完成"
+          ls -lh build/output/images/
+
+      - name: Verify NAS files
+        run: |
+          IMG=$(ls -t build/output/images/*.img 2>/dev/null | head -n 1)
+          [ -z "$IMG" ] && { echo "FATAL: no image found"; exit 1; }
+          
           echo ">>> Image: $(basename "$IMG") ($(du -hm "$IMG" | cut -f1)MB)"
           
-          gunzip -f "$IMG"
-          IMG="${IMG%.gz}"
-          
+          # 挂载镜像检查
           LOOP=$(sudo losetup --find --show --partscan "$IMG")
           sleep 2
           
@@ -88,27 +107,15 @@ jobs:
           elif [ -b "${LOOP}p1" ]; then
             LOOP_PART="${LOOP}p1"
           else
-            echo "FATAL: no partition found on $LOOP"
+            echo "FATAL: no partition found"
             ls -la ${LOOP}*
             exit 1
           fi
-          echo ">>> Mounting: $LOOP_PART"
           
           sudo mkdir -p /mnt/nasimg
           sudo mount "$LOOP_PART" /mnt/nasimg
           
-          # 复制 NAS 文件
-          sudo mkdir -p /mnt/nasimg/opt/nas
-          sudo cp -rv build-armbian/armbian-files/different-files/wxy-oect/rootfs/opt/* /mnt/nasimg/opt/
-          
-          # 复制精简脚本
-          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/init-nas-services.sh /mnt/nasimg/etc/
-          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/setup-nas-base.sh /mnt/nasimg/etc/
-          
-          # 复制 systemd 服务文件
-          sudo cp -v build-armbian/armbian-files/different-files/wxy-oect/rootfs/etc/systemd/system/nas-webui.service /mnt/nasimg/etc/systemd/system/
-          
-          echo ">>> Verified files:"
+          echo ">>> Checking NAS files:"
           ls -la /mnt/nasimg/opt/nas/
           ls -la /mnt/nasimg/opt/nas/webui/
           ls -la /mnt/nasimg/etc/init-nas-services.sh
@@ -119,34 +126,24 @@ jobs:
           [ -f /mnt/nasimg/etc/init-nas-services.sh ] || { echo "FATAL: init-nas-services.sh missing"; exit 1; }
           [ -f /mnt/nasimg/etc/systemd/system/nas-webui.service ] || { echo "FATAL: nas-webui.service missing"; exit 1; }
           
-          # 设置权限
-          sudo chmod +x /mnt/nasimg/opt/nas/install-nas.sh
-          sudo chmod +x /mnt/nasimg/opt/nas/webui/nas-webui.py
+          # 验证 Web UI 是否包含按需启动特性
+          grep -q "IDLE_TIMEOUT" /mnt/nasimg/opt/nas/webui/nas-webui.py || { echo "FATAL: idle timeout not found"; exit 1; }
+          grep -q "start_webui" /mnt/nasimg/opt/nas/webui/nas-webui.py || { echo "FATAL: start_webui function missing"; exit 1; }
           
-          sync
           sudo umount /mnt/nasimg
           sudo rmdir /mnt/nasimg
           sudo losetup -D
-          echo ">>> Done."
           
-          LOOP2=$(sudo losetup --find --show --partscan "$IMG")
-          sleep 3
-          [ -b "${LOOP2}p2" ] && LOOP2_PART="${LOOP2}p2" || LOOP2_PART="${LOOP2}p1"
-          sudo mkdir -p /mnt/nasimg
-          sudo mount "$LOOP2_PART" /mnt/nasimg
-          echo ">>> Double-check:"
-          ls /mnt/nasimg/opt/nas/
-          ls /mnt/nasimg/opt/nas/webui/
-          sudo umount /mnt/nasimg
-          sudo rmdir /mnt/nasimg
-          sudo losetup -D
           echo "=== ALL CHECKS PASSED ==="
 
       - name: Compress image
         run: |
-          cd "${{ env.PACKAGED_OUTPUTPATH }}"
+          cd build/output/images
           gzip -qf *.img 2>/dev/null || true
-          ls -lh
+          ls -lh *.img.gz
+          echo "PACKAGED_OUTPUTPATH=${PWD}" >> ${GITHUB_ENV}
+          echo "PACKAGED_OUTPUTDATE=$(date +"%m.%d.%H%M")" >> ${GITHUB_ENV}
+          echo "PACKAGED_STATUS=success" >> ${GITHUB_ENV}
 
       - name: Upload NAS image artifact
         uses: actions/upload-artifact@v4
@@ -168,6 +165,9 @@ jobs:
             - **系统**: ${{ github.event.inputs.os_version }}
             - **内核**: ${{ github.event.inputs.kernel_version }}
             - **类型**: ${{ github.event.inputs.image_type }}
+            
+            ### 构建方式
+            使用仓库自带 rebuild 脚本从源码打包，所有配置直接在仓库中管理
             
             ### 新增特性 (v3)
             - **按需启动 Web UI**: 访问时自动启动，闲置3分钟后自动退出
