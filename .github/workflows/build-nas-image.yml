@@ -78,8 +78,8 @@ jobs:
           gunzip -f Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
           
           # 使用 rebuild 脚本重新打包
-          cd ../..
-          bash rebuild \
+          cd "${{ github.workspace }}"
+          bash ./rebuild \
             -b ${{ github.event.inputs.target_device }} \
             -k ${{ github.event.inputs.kernel_version }} \
             -a true \
