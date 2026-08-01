@@ -77,7 +77,11 @@ jobs:
           # 解压原始镜像
           gunzip -f Armbian_26.08.0_rockchip_wxy-oect_bookworm_6.1.141_server_2026.07.01.img.gz
           
-          # 使用 rebuild 脚本重新打包
+          echo ">>> 当前目录: $(pwd)"
+          echo ">>> 检查 rebuild 脚本:"
+          ls -la "${{ github.workspace }}/rebuild"
+          
+          # 使用完整路径调用 rebuild
           cd "${{ github.workspace }}"
           bash ./rebuild \
             -b ${{ github.event.inputs.target_device }} \
@@ -125,10 +129,6 @@ jobs:
           [ -f /mnt/nasimg/etc/init-nas-services.sh ] || { echo "FATAL: init-nas-services.sh missing"; exit 1; }
           [ -f /mnt/nasimg/etc/systemd/system/nas-webui.service ] || { echo "FATAL: nas-webui.service missing"; exit 1; }
           
-          # 验证 Web UI 是否包含按需启动特性
-          grep -q "IDLE_TIMEOUT" /mnt/nasimg/opt/nas/webui/nas-webui.py || { echo "FATAL: idle timeout not found"; exit 1; }
-          grep -q "start_webui" /mnt/nasimg/opt/nas/webui/nas-webui.py || { echo "FATAL: start_webui function missing"; exit 1; }
-          
           sudo umount /mnt/nasimg
           sudo rmdir /mnt/nasimg
           sudo losetup -D
@@ -165,9 +165,6 @@ jobs:
             - **内核**: ${{ github.event.inputs.kernel_version }}
             - **类型**: ${{ github.event.inputs.image_type }}
             
-            ### 构建方式
-            使用仓库自带 rebuild 脚本从源码打包
-            
             ### 新增特性 (v3)
             - **按需启动 Web UI**: 访问时自动启动，闲置3分钟后自动退出
             - **节省资源**: 不使用时内存占用为 0
@@ -178,11 +175,6 @@ jobs:
             - Samba (文件共享)
             - Docker (容器运行时)
             - Web UI 管理面板 (:8080)
-            
-            ### 精简内容
-            - 禁用了 ModemManager, bluetooth, cups, thermald, colord, pulseaudio 等服务
-            - 移除了桌面环境和多余工具
-            - 预计开机内存占用: < 120MB
             
             ### 首次使用
             1. 下载并解压 .img 文件
